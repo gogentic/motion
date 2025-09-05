@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  motion-api:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: motion-video-api
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=0  # Use GPU 0, change if needed
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
+      - CUDA_VISIBLE_DEVICES=0
+      - COMFYUI_HOST=localhost
+      - COMFYUI_PORT=9188
+      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
+      - CUDA_MODULE_LOADING=LAZY
+      - TCMALLOC_LARGE_ALLOC_REPORT_THRESHOLD=10737418240
+    ports:
+      - "9000:9000"  # API service
+      # - "9188:9188"  # ComfyUI (comment out in production)
+    volumes:
+      # Model persistence - share models across container restarts
+      - ./models:/app/ComfyUI/models
+      - ./custom_nodes:/app/ComfyUI/custom_nodes
+      - ./output:/app/output
+      - ./workflows:/app/workflows
+      # Optional: Share with existing ComfyUI if models are compatible
+      # - /path/to/existing/comfyui/models/checkpoints:/app/ComfyUI/models/checkpoints:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+        limits:
+          # Limit memory to prevent OOM on shared systems
+          memory: 16G
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    networks:
+      - motion-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+networks:
+  motion-network:
+    driver: bridge
