@@ -5,20 +5,12 @@ services:
     build: .
     container_name: motion-video-api
     runtime: nvidia
+    network_mode: host
     environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
-      - CUDA_VISIBLE_DEVICES=0
-      - COMFYUI_HOST=localhost
+      - COMFYUI_HOST=127.0.0.1
       - COMFYUI_PORT=9188
-    ports:
-      - "9000:9000"  # API service
-      - "9188:9188"  # ComfyUI (optional, for debugging)
     volumes:
-      - ./models:/app/ComfyUI/models
-      - ./custom_nodes:/app/ComfyUI/custom_nodes
       - ./output:/app/output
-      - ./input:/app/ComfyUI/input
       - ./workflows:/app/workflows
     deploy:
       resources:

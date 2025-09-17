@@ -1,0 +1,115 @@
+{
+  "script": "Agentic AI across the entire organization: Using artificial intelligence and agentic frameworks for impactful business innovation",
+  "workflow": {
+    "16": {
+      "inputs": { "sampler_name": "euler" },
+      "class_type": "KSamplerSelect"
+    },
+    "17": {
+      "inputs": {
+        "scheduler": "simple",
+        "steps": 20,
+        "denoise": 1,
+        "model": ["12", 0]
+      },
+      "class_type": "BasicScheduler"
+    },
+    "26": {
+      "inputs": {
+        "guidance": 6,
+        "conditioning": ["44", 0]
+      },
+      "class_type": "FluxGuidance"
+    },
+    "45": {
+      "inputs": {
+        "width": 848,
+        "height": 480,
+        "length": 73,
+        "batch_size": 1
+      },
+      "class_type": "EmptyHunyuanLatentVideo"
+    },
+    "22": {
+      "inputs": {
+        "model": ["67", 0],
+        "conditioning": ["26", 0]
+      },
+      "class_type": "BasicGuider"
+    },
+    "67": {
+      "inputs": {
+        "shift": 7,
+        "model": ["12", 0]
+      },
+      "class_type": "ModelSamplingSD3"
+    },
+    "10": {
+      "inputs": {
+        "vae_name": "hunyuan_video_vae_bf16.safetensors"
+      },
+      "class_type": "VAELoader"
+    },
+    "11": {
+      "inputs": {
+        "clip_name1": "clip_l.safetensors",
+        "clip_name2": "llava_llama3_fp8_scaled.safetensors",
+        "type": "hunyuan_video"
+      },
+      "class_type": "DualCLIPLoader"
+    },
+    "73": {
+      "inputs": {
+        "tile_size": 256,
+        "overlap": 64,
+        "temporal_size": 16,
+        "temporal_overlap": 4,
+        "samples": ["13", 0],
+        "vae": ["10", 0]
+      },
+      "class_type": "VAEDecodeTiled"
+    },
+    "12": {
+      "inputs": {
+        "unet_name": "hunyuan_video/hunyuan_video_t2v_720p_bf16.safetensors",
+        "weight_dtype": "default"
+      },
+      "class_type": "UNETLoader"
+    },
+    "13": {
+      "inputs": {
+        "noise": ["25", 0],
+        "guider": ["22", 0],
+        "sampler": ["16", 0],
+        "sigmas": ["17", 0],
+        "latent_image": ["45", 0]
+      },
+      "class_type": "SamplerCustomAdvanced"
+    },
+    "44": {
+      "inputs": {
+        "text": "Agentic AI across the entire organization: Using artificial intelligence and agentic frameworks for impactful business innovation",
+        "clip": ["11", 0]
+      },
+      "class_type": "CLIPTextEncode"
+    },
+    "75": {
+      "inputs": {
+        "filename_prefix": "motion_api_test",
+        "fps": 24,
+        "lossless": false,
+        "quality": 80,
+        "method": "default",
+        "images": ["73", 0]
+      },
+      "class_type": "SaveAnimatedWEBP"
+    },
+    "25": {
+      "inputs": {
+        "noise_seed": 1,
+        "seed_control_mode": "randomize"
+      },
+      "class_type": "RandomNoise"
+    }
+  }
+}
