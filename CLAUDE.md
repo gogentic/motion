@@ -3,7 +3,21 @@
 ## Project Overview
 MOTION is a headless ComfyUI service that generates B-roll video clips from text scripts. It processes scripts and generates 2 video clips (5-8 seconds each) per minute of script content.
 
-## Current State (As of Sep 4, 2025)
+## Current State (As of Sep 20, 2025)
+
+### ✅ MVP ACHIEVED - Motion B-Roll Integration
+1. **VHS_VideoCombine Integration Complete**
+   - Direct MP4 output (no WebP conversion needed)
+   - 49 frames at 24fps (2-second clips)
+   - Successfully tested with COMPOSE integration
+
+2. **Working with COMPOSE**
+   - HTTP API on port 9000 for job submission
+   - Generates AI video clips using Hunyuan T2V model
+   - Used in hybrid overlay system (2 videos + 4 images)
+   - Production test completed: 2025-09-20
+
+## Previous State (As of Sep 4, 2025)
 
 ### ✅ Completed Setup
 1. **Docker Container Built** (25.9GB)
