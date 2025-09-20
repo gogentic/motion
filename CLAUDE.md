@@ -33,7 +33,31 @@ Both services share the RTX 4090 GPU via Docker's nvidia-container-runtime witho
 
 ## Service Modes
 
-### 1. WebUI Mode (Currently Active)
+### 1. Local Venv Mode (Current default)
+Most day-to-day work now runs directly in the repo’s `ComfyUI/venv` instead of Docker.
+```bash
+# one time if Docker ever touched the folders
+sudo chown -R ira:ira models input output workflows custom_nodes user_data
+
+# ensure nothing else is running
+./stop_services.sh
+
+# create/update venv, sync ComfyUI/API/Manager deps, wire shared paths
+./scripts/prepare_comfy_env.sh
+
+# launch ComfyUI (9188) + FastAPI (9000) on the venv interpreter
+./start_services.sh
+
+# tear down when finished
+./stop_services.sh
+```
+- Prep script writes `ComfyUI/extra_model_paths.yaml` so ComfyUI picks up
+  `../models` and both `../custom_nodes` + `../custom_nodes_local` (Manager lives here).
+- `ComfyUI/user/default/workflows` is a symlink to the repo `workflows/` dir, so
+  anything dropped there via Git shows in the UI sidebar after a refresh.
+- If the prep script warns about permissions, rerun the `chown` command above.
+
+### 2. WebUI Mode (Docker)
 For model installation and workflow testing:
 ```bash
 # Start WebUI
@@ -45,7 +69,7 @@ docker run --rm -d --gpus all --network host \
   python3 /app/ComfyUI/main.py --listen 0.0.0.0 --port 9188
 ```
 
-### 2. API Mode (Production)
+### 3. API Mode (Production)
 For automated script-to-video generation:
 ```bash
 # Stop WebUI

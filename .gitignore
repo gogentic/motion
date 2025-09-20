@@ -82,4 +82,5 @@ Thumbs.db
 
 # Temporary files
 *.tmp
-*.temp
+*.tempcustom_nodes_local/
+*.safetensors
