@@ -3,7 +3,21 @@
 ## Project Overview
 MOTION is a headless ComfyUI service that generates B-roll video clips from text scripts. It processes scripts and generates 2 video clips (5-8 seconds each) per minute of script content.
 
-## Current State (As of Sep 4, 2025)
+## Current State (As of Sep 20, 2025)
+
+### ✅ MVP ACHIEVED - Motion B-Roll Integration
+1. **VHS_VideoCombine Integration Complete**
+   - Direct MP4 output (no WebP conversion needed)
+   - 49 frames at 24fps (2-second clips)
+   - Successfully tested with COMPOSE integration
+
+2. **Working with COMPOSE**
+   - HTTP API on port 9000 for job submission
+   - Generates AI video clips using Hunyuan T2V model
+   - Used in hybrid overlay system (2 videos + 4 images)
+   - Production test completed: 2025-09-20
+
+## Previous State (As of Sep 4, 2025)
 
 ### ✅ Completed Setup
 1. **Docker Container Built** (25.9GB)
@@ -33,7 +47,31 @@ Both services share the RTX 4090 GPU via Docker's nvidia-container-runtime witho
 
 ## Service Modes
 
-### 1. WebUI Mode (Currently Active)
+### 1. Local Venv Mode (Current default)
+Most day-to-day work now runs directly in the repo’s `ComfyUI/venv` instead of Docker.
+```bash
+# one time if Docker ever touched the folders
+sudo chown -R ira:ira models input output workflows custom_nodes user_data
+
+# ensure nothing else is running
+./stop_services.sh
+
+# create/update venv, sync ComfyUI/API/Manager deps, wire shared paths
+./scripts/prepare_comfy_env.sh
+
+# launch ComfyUI (9188) + FastAPI (9000) on the venv interpreter
+./start_services.sh
+
+# tear down when finished
+./stop_services.sh
+```
+- Prep script writes `ComfyUI/extra_model_paths.yaml` so ComfyUI picks up
+  `../models` and both `../custom_nodes` + `../custom_nodes_local` (Manager lives here).
+- `ComfyUI/user/default/workflows` is a symlink to the repo `workflows/` dir, so
+  anything dropped there via Git shows in the UI sidebar after a refresh.
+- If the prep script warns about permissions, rerun the `chown` command above.
+
+### 2. WebUI Mode (Docker)
 For model installation and workflow testing:
 ```bash
 # Start WebUI
@@ -45,7 +83,7 @@ docker run --rm -d --gpus all --network host \
   python3 /app/ComfyUI/main.py --listen 0.0.0.0 --port 9188
 ```
 
-### 2. API Mode (Production)
+### 3. API Mode (Production)
 For automated script-to-video generation:
 ```bash
 # Stop WebUI

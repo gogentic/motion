@@ -82,4 +82,21 @@ Thumbs.db
 
 # Temporary files
 *.tmp
-*.temp
+*.safetensors
+
+# Local custom nodes
+custom_nodes_local/
+
+# Runtime state
+user_data/
+.comfyui_pid
+.motion_api_pid
+.pids/
+*.pid
+.deps_installed
+
+# Caches
+.uv-cache/
+
+# Node tooling
+node_modules/

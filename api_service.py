@@ -27,6 +27,9 @@ API_PORT = int(os.getenv("API_PORT", "9000"))
 OUTPUT_DIR = Path("./output")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
+CLIENT_TIMEOUT_SECONDS = 36_000
+AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=CLIENT_TIMEOUT_SECONDS)
+
 class JobStatus(str, Enum):
     PENDING = "pending"
     PROCESSING = "processing"
@@ -104,6 +107,37 @@ def parse_script_to_scenes(script: str, clips_per_minute: int) -> List[Dict[str,
     
     return scenes[:total_clips]
 
+
+def _collect_outputs_from_disk(workflow: Optional[Dict[str, Any]], job_start: float) -> List[str]:
+    prefixes: List[str] = []
+    if workflow:
+        for node in workflow.values():
+            inputs = node.get('inputs', {}) if isinstance(node, dict) else {}
+            prefix = inputs.get('filename_prefix')
+            if isinstance(prefix, str) and prefix:
+                prefixes.append(prefix)
+
+    if not prefixes:
+        prefixes.append('motion_api_fast_broll')
+
+    collected: List[str] = []
+    cutoff = job_start - 5
+    for prefix in prefixes:
+        for path in OUTPUT_DIR.glob(f"{prefix}*"):
+            try:
+                mtime = path.stat().st_mtime
+            except FileNotFoundError:
+                continue
+            if path.is_file() and mtime >= cutoff:
+                rel = f"output/{path.name}"
+                if rel not in collected:
+                    collected.append(rel)
+
+    return sorted(collected)
+
+DEFAULT_CHECKPOINT = "SDXL/sd_xl_base_1.0_0.9vae.safetensors"
+
+
 def create_video_workflow(scene: Dict[str, Any], style: str, resolution: str, fps: int, duration: float) -> Dict:
     width, height = map(int, resolution.split('x'))
     total_frames = int(fps * duration)
@@ -112,7 +146,7 @@ def create_video_workflow(scene: Dict[str, Any], style: str, resolution: str, fp
         "1": {
             "class_type": "CheckpointLoaderSimple",
             "inputs": {
-                "ckpt_name": "sd_xl_base_1.0.safetensors"
+                "ckpt_name": DEFAULT_CHECKPOINT
             }
         },
         "2": {
@@ -183,7 +217,7 @@ async def execute_workflow(workflow: Dict, job_id: str) -> Dict:
             "client_id": job_id
         }
         
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
             async with session.post(f"{COMFYUI_URL}/prompt", json=payload) as resp:
                 if resp.status != 200:
                     text = await resp.text()
@@ -191,20 +225,42 @@ async def execute_workflow(workflow: Dict, job_id: str) -> Dict:
                 
                 result = await resp.json()
                 prompt_id = result.get('prompt_id')
-        
-        max_wait = 600  # 10 minutes for large models like Hunyuan
-        start_time = time.time()
-        
-        while time.time() - start_time < max_wait:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{COMFYUI_URL}/history/{prompt_id}") as resp:
-                    if resp.status == 200:
-                        history = await resp.json()
-                        if prompt_id in history:
-                            return history[prompt_id]
             
-            await asyncio.sleep(2)
-        
+            # Allow overnight batch runs; give ComfyUI up to 10 hours to complete a job
+            max_wait = 36_000
+            start_time = time.time()
+            consecutive_errors = 0
+            
+            while time.time() - start_time < max_wait:
+                try:
+                    async with session.get(f"{COMFYUI_URL}/history/{prompt_id}") as resp:
+                        if resp.status == 200:
+                            history = await resp.json()
+                            if prompt_id in history:
+                                return history[prompt_id]
+                            consecutive_errors = 0
+                        elif resp.status == 404:
+                            consecutive_errors += 1
+                        else:
+                            consecutive_errors += 1
+                            logger.warning(
+                                "Unexpected status while polling ComfyUI history",
+                                {"prompt_id": prompt_id, "status": resp.status}
+                            )
+                except Exception as poll_error:
+                    consecutive_errors += 1
+                    logger.warning(
+                        "Error while polling ComfyUI history",
+                        {"prompt_id": prompt_id, "error": str(poll_error)}
+                    )
+
+                if consecutive_errors >= 90:
+                    raise TimeoutError(
+                        f"Exceeded {consecutive_errors} consecutive polling errors for prompt {prompt_id}"
+                    )
+
+                await asyncio.sleep(2)
+
         raise TimeoutError(f"Workflow execution timed out after {max_wait} seconds")
         
     except Exception as e:
@@ -213,20 +269,96 @@ async def execute_workflow(workflow: Dict, job_id: str) -> Dict:
 
 async def process_video_job(job: VideoJob):
     try:
+        job_start = time.time()
         job.status = JobStatus.PROCESSING
-        
+
+        def _record_outputs(output: Dict[str, Any]) -> None:
+            entries: List[Dict[str, Any]] = []
+            if 'images' in output and isinstance(output['images'], list):
+                entries.extend(output['images'])
+            if 'files' in output and isinstance(output['files'], list):
+                entries.extend(output['files'])
+            if 'videos' in output and isinstance(output['videos'], list):
+                entries.extend(output['videos'])
+
+            for entry in entries:
+                filename = entry.get('filename')
+                if not filename:
+                    continue
+
+                subfolder = entry.get('subfolder', '').strip('/')
+                relative_path = f"output/{filename}" if not subfolder else f"output/{subfolder}/{filename}"
+
+                if relative_path not in job.output_files:
+                    job.output_files.append(relative_path)
+                    logger.info(
+                        "Recorded workflow output",
+                        {
+                            "job_id": job.job_id,
+                            "filename": filename,
+                            "subfolder": subfolder,
+                            "type": entry.get('type')
+                        }
+                    )
+
         # If custom workflow provided, use it directly
         if job.workflow:
             job.total_clips = 1
             result = await execute_workflow(job.workflow, job.job_id)
-            
-            if result.get('outputs'):
-                for output in result['outputs'].values():
+
+            outputs = result.get('outputs')
+            if outputs:
+                summary: Dict[str, Any] = {}
+                for node_id, output in outputs.items():
+                    node_summary: Dict[str, Any] = {}
                     if 'images' in output:
-                        for image in output['images']:
-                            output_path = f"output/{image['filename']}"
-                            job.output_files.append(output_path)
-            
+                        node_summary['images'] = [
+                            {
+                                'filename': img.get('filename'),
+                                'subfolder': img.get('subfolder'),
+                                'type': img.get('type')
+                            }
+                            for img in output['images']
+                        ]
+                    if 'files' in output:
+                        node_summary['files'] = [
+                            {
+                                'filename': f.get('filename'),
+                                'subfolder': f.get('subfolder'),
+                                'type': f.get('type')
+                            }
+                            for f in output['files']
+                        ]
+                    if 'videos' in output:
+                        node_summary['videos'] = [
+                            {
+                                'filename': v.get('filename'),
+                                'subfolder': v.get('subfolder'),
+                                'type': v.get('type')
+                            }
+                            for v in output['videos']
+                        ]
+                    summary[node_id] = node_summary
+
+                logger.info("Workflow outputs summary", {"job_id": job.job_id, "outputs": summary})
+
+                for output in result['outputs'].values():
+                    _record_outputs(output)
+            else:
+                logger.warn(
+                    "Workflow returned no outputs",
+                    {
+                        "job_id": job.job_id,
+                        "result_keys": list(result.keys())
+                    }
+                )
+
+            if not job.output_files:
+                collected = _collect_outputs_from_disk(job.workflow, job_start)
+                if collected:
+                    job.output_files.extend(collected)
+                    logger.info('Collected fallback outputs from disk', {"job_id": job.job_id, "files": collected})
+
             job.clips_generated = 1
             job.progress = 100.0
         else:
@@ -244,13 +376,10 @@ async def process_video_job(job: VideoJob):
                 )
                 
                 result = await execute_workflow(workflow, job.job_id)
-                
+
                 if result.get('outputs'):
                     for output in result['outputs'].values():
-                        if 'images' in output:
-                            for image in output['images']:
-                                output_path = f"output/{image['filename']}"
-                                job.output_files.append(output_path)
+                        _record_outputs(output)
                 
                 job.clips_generated = i + 1
                 job.progress = (i + 1) / len(scenes) * 100
@@ -322,7 +451,7 @@ async def download_output(job_id: str, filename: str):
 @app.get("/health")
 async def health_check():
     try:
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
             async with session.get(f"{COMFYUI_URL}/system_stats") as resp:
                 comfyui_healthy = resp.status == 200
     except:
