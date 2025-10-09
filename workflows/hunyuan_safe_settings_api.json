@@ -1,0 +1,70 @@
+{
+  "16": {
+    "class_type": "KSamplerSelect",
+    "inputs": {}
+  },
+  "17": {
+    "class_type": "BasicScheduler",
+    "inputs": {}
+  },
+  "26": {
+    "class_type": "FluxGuidance",
+    "inputs": {}
+  },
+  "45": {
+    "class_type": "EmptyHunyuanLatentVideo",
+    "inputs": {}
+  },
+  "22": {
+    "class_type": "BasicGuider",
+    "inputs": {}
+  },
+  "67": {
+    "class_type": "ModelSamplingSD3",
+    "inputs": {}
+  },
+  "10": {
+    "class_type": "VAELoader",
+    "inputs": {}
+  },
+  "11": {
+    "class_type": "DualCLIPLoader",
+    "inputs": {}
+  },
+  "73": {
+    "class_type": "VAEDecodeTiled",
+    "inputs": {}
+  },
+  "8": {
+    "class_type": "VAEDecode",
+    "inputs": {}
+  },
+  "74": {
+    "class_type": "Note",
+    "inputs": {}
+  },
+  "77": {
+    "class_type": "Note",
+    "inputs": {}
+  },
+  "13": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {}
+  },
+  "75": {
+    "class_type": "SaveAnimatedWEBP",
+    "inputs": {}
+  },
+  "25": {
+    "class_type": "RandomNoise",
+    "inputs": {}
+  },
+  "44": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {}
+  },
+  "12": {
+    "class_type": "UNETLoader",
+    "inputs": {}
+  }
+}

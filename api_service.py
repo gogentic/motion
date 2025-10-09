@@ -27,6 +27,9 @@ API_PORT = int(os.getenv("API_PORT", "9000"))
 OUTPUT_DIR = Path("./output")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
+CLIENT_TIMEOUT_SECONDS = 36_000
+AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=CLIENT_TIMEOUT_SECONDS)
+
 class JobStatus(str, Enum):
     PENDING = "pending"
     PROCESSING = "processing"
@@ -214,7 +217,7 @@ async def execute_workflow(workflow: Dict, job_id: str) -> Dict:
             "client_id": job_id
         }
         
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
             async with session.post(f"{COMFYUI_URL}/prompt", json=payload) as resp:
                 if resp.status != 200:
                     text = await resp.text()
@@ -222,20 +225,42 @@ async def execute_workflow(workflow: Dict, job_id: str) -> Dict:
                 
                 result = await resp.json()
                 prompt_id = result.get('prompt_id')
-        
-        max_wait = 600  # 10 minutes for large models like Hunyuan
-        start_time = time.time()
-        
-        while time.time() - start_time < max_wait:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{COMFYUI_URL}/history/{prompt_id}") as resp:
-                    if resp.status == 200:
-                        history = await resp.json()
-                        if prompt_id in history:
-                            return history[prompt_id]
             
-            await asyncio.sleep(2)
-        
+            # Allow overnight batch runs; give ComfyUI up to 10 hours to complete a job
+            max_wait = 36_000
+            start_time = time.time()
+            consecutive_errors = 0
+            
+            while time.time() - start_time < max_wait:
+                try:
+                    async with session.get(f"{COMFYUI_URL}/history/{prompt_id}") as resp:
+                        if resp.status == 200:
+                            history = await resp.json()
+                            if prompt_id in history:
+                                return history[prompt_id]
+                            consecutive_errors = 0
+                        elif resp.status == 404:
+                            consecutive_errors += 1
+                        else:
+                            consecutive_errors += 1
+                            logger.warning(
+                                "Unexpected status while polling ComfyUI history",
+                                {"prompt_id": prompt_id, "status": resp.status}
+                            )
+                except Exception as poll_error:
+                    consecutive_errors += 1
+                    logger.warning(
+                        "Error while polling ComfyUI history",
+                        {"prompt_id": prompt_id, "error": str(poll_error)}
+                    )
+
+                if consecutive_errors >= 90:
+                    raise TimeoutError(
+                        f"Exceeded {consecutive_errors} consecutive polling errors for prompt {prompt_id}"
+                    )
+
+                await asyncio.sleep(2)
+
         raise TimeoutError(f"Workflow execution timed out after {max_wait} seconds")
         
     except Exception as e:
@@ -426,7 +451,7 @@ async def download_output(job_id: str, filename: str):
 @app.get("/health")
 async def health_check():
     try:
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
             async with session.get(f"{COMFYUI_URL}/system_stats") as resp:
                 comfyui_healthy = resp.status == 200
     except:

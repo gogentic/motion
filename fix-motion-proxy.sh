@@ -36,9 +36,9 @@ server {
         # WebSocket support
         proxy_buffering off;
         proxy_cache off;
-        proxy_connect_timeout 600;
-        proxy_send_timeout 600;
-        proxy_read_timeout 600;
+        proxy_connect_timeout 36000;
+        proxy_send_timeout 36000;
+        proxy_read_timeout 36000;
         
         # Increase body size for uploads
         client_max_body_size 100M;
